@@ -1,0 +1,230 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>실기기 확인 현황판</title>
+<meta name="description" content="KoriyoSCAN(reform-dev-team/exam-rf-guard)에서 실제 안드로이드 폰으로 확인을 기다리는 PR을 GitHub에서 바로 불러와 보여 주는 현황판">
+<style>
+  /* 한 열 대시보드: 요약 문장 → 숫자 세 칸 → PR 표 → 참여 방법 */
+  :root {
+    --bg: #f7f8f6; --panel: #ffffff; --fg: #1d2421; --muted: #5d6963; --line: #dfe4e0;
+    --accent: #1f6f5c; --warn: #a15c07; --ok: #237a3b; --bad: #b3261e;
+    --font: "Pretendard", "Apple SD Gothic Neo", "Noto Sans KR", system-ui, sans-serif;
+    --mono: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #121614; --panel: #1a201d; --fg: #e6ece8; --muted: #9aa8a1; --line: #2c3530;
+      --accent: #5cc3a6; --warn: #e3a54a; --ok: #6bcb84; --bad: #f2867d; color-scheme: dark; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.55 var(--font); }
+  .wrap { max-width: 1040px; margin: 0 auto; padding-block: 32px 48px;
+    padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+    display: flex; flex-direction: column; gap: 24px; }
+  h1 { margin: 0; font-size: clamp(1.6rem, 3vw + 1rem, 2.2rem); letter-spacing: -0.01em; text-wrap: balance; }
+  h2 { margin: 0; font-size: 1.1rem; }
+  .lede { margin: 0; font-size: 1.1rem; max-width: 62ch; }
+  .lede b, .num { font-variant-numeric: tabular-nums; }
+  .bar { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+  .meta { color: var(--muted); font-size: 0.85rem; }
+  button, select { font: inherit; color: var(--fg); background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 6px 12px; }
+  button { cursor: pointer; font-weight: 600; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: var(--bg); }
+  button:disabled { opacity: 0.6; cursor: progress; }
+  button:focus-visible, select:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; }
+  .tile { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+  .tile .label { color: var(--muted); font-size: 0.8rem; letter-spacing: 0.02em; }
+  .tile .value { font-size: 2rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .tile .note { color: var(--muted); font-size: 0.8rem; }
+  .status { margin: 0; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); font-size: 0.9rem; }
+  .status.error { border-color: var(--bad); color: var(--bad); }
+  .tablewrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-size: 0.8rem; font-weight: 600; white-space: nowrap; }
+  tbody tr:last-child td { border-bottom: 0; }
+  tbody tr:hover { background: var(--bg); }
+  td a { color: var(--fg); text-decoration: none; }
+  td a:hover { text-decoration: underline; }
+  td.pr { white-space: nowrap; font-weight: 700; font-variant-numeric: tabular-nums; }
+  td.title { min-width: 18rem; }
+  td.who, td.date { white-space: nowrap; color: var(--muted); }
+  .chip { display: inline-block; padding: 0 8px; border: 1px solid var(--line); border-radius: 999px; font-size: 0.8rem; white-space: nowrap; }
+  .mine { color: var(--accent); font-weight: 600; }
+  .how { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px 20px; }
+  .how ol { margin: 8px 0 0; padding-left: 1.25rem; max-width: 70ch; display: flex; flex-direction: column; gap: 4px; }
+  footer { color: var(--muted); font-size: 0.8rem; max-width: 72ch; }
+  footer a { color: var(--accent); }
+  @media (prefers-reduced-motion: no-preference) { tbody tr { transition: background 120ms ease-out; } }
+</style>
+</head>
+<body>
+<main class="wrap">
+  <header style="display:flex;flex-direction:column;gap:12px">
+    <h1>실기기 확인 현황판</h1>
+    <p class="lede" id="lede">GitHub에서 목록을 불러오는 중입니다.</p>
+    <div class="bar">
+      <button class="primary" id="refresh" type="button">갱신</button>
+      <label class="meta" for="area">분야
+        <select id="area"><option value="">전체</option></select>
+      </label>
+      <span class="meta" id="fetched"></span>
+      <a class="meta" id="live" href="https://github.com/reform-dev-team/exam-rf-guard/pulls?q=is%3Apr+is%3Aopen+in%3Atitle+%22%EC%8B%A4%EA%B8%B0%EA%B8%B0+%ED%99%95%EC%9D%B8+X%22" target="_blank" rel="noopener">GitHub 검색으로 보기 ↗</a>
+    </div>
+  </header>
+
+  <p class="status" id="status" hidden></p>
+
+  <section class="tiles" aria-label="요약">
+    <div class="tile"><span class="label">확인 대기 PR</span><span class="value" id="t-count">—</span><span class="note">제목에 [실기기 확인 X]가 붙은 열린 PR</span></div>
+    <div class="tile"><span class="label">작성자</span><span class="value" id="t-authors">—</span><span class="note">실기기 없이 코드를 고친 사람 수</span></div>
+    <div class="tile"><span class="label">댓글이 달린 PR</span><span class="value" id="t-commented">—</span><span class="note">실기기 결과가 댓글로 올라왔을 수 있는 PR</span></div>
+  </section>
+
+  <section style="display:flex;flex-direction:column;gap:12px">
+    <h2>확인을 기다리는 PR</h2>
+    <div class="tablewrap">
+      <table aria-label="실기기 확인을 기다리는 PR 목록">
+        <thead><tr><th>PR</th><th>제목</th><th>작성자</th><th>분야</th><th>올라온 날</th><th>댓글</th></tr></thead>
+        <tbody id="rows"><tr><td colspan="6" class="meta">불러오는 중…</td></tr></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="how">
+    <h2>안드로이드 폰이 있다면</h2>
+    <ol>
+      <li>위 표에서 PR 하나를 누릅니다.</li>
+      <li>PR 본문의 "실제 테스트 결과" 칸에 적힌 "실기기로 확인하는 방법"을 따라 해 봅니다. 대부분 1~2분이면 됩니다.</li>
+      <li>결과를 그 PR에 댓글로 남깁니다. 휴대폰 모델, Android 버전, 누른 순서, 기대한 결과와 실제 결과를 적고, 화면에 나온 이름·주소·장소는 가려 주세요.</li>
+    </ol>
+  </section>
+
+  <footer>
+    <p>목록은 <a href="https://github.com/reform-dev-team/exam-rf-guard" target="_blank" rel="noopener">reform-dev-team/exam-rf-guard</a>에서 제목에 [실기기 확인 X]가 붙은 열린 PR을 GitHub 공개 API로 불러온 것입니다. "분야"는 PR 제목의 낱말로 자동 분류한 것이라 틀릴 수 있습니다. 로그인 없이 쓰는 API라 한 시간에 60번까지 갱신할 수 있습니다.</p>
+    <p>만든 사람: <a href="https://github.com/s2510310-blip" target="_blank" rel="noopener">s2510310-blip</a> · Claude Code와 함께 만들었습니다.</p>
+  </footer>
+</main>
+
+<script>
+(() => {
+  const REPO = 'reform-dev-team/exam-rf-guard';
+  const ME = 's2510310-blip';
+  const API = 'https://api.github.com/search/issues?per_page=100&sort=created&order=desc&q=' +
+    encodeURIComponent(`repo:${REPO} is:pr is:open in:title "실기기 확인 X"`);
+  const $ = (id) => document.getElementById(id);
+  let items = [];
+
+  // 제목 낱말로 나누는 분야. 먼저 맞는 것을 쓴다.
+  const AREAS = [
+    ['무음', /silent|do not disturb|\bdnd\b|sound settings/i],
+    ['블루투스', /bluetooth|\bble\b/i],
+    ['와이파이', /wi-?fi|hotspot|ssid|owe|ghz/i],
+    ['측정', /empty-room|measurement|baseline/i],
+    ['설정', /settings screen|permission|setup/i],
+    ['화면', /\bui\b|screen|refresh|label|display|show only|device kind/i],
+  ];
+  const areaOf = (t) => (AREAS.find(([, re]) => re.test(t)) || ['기타'])[0];
+  const cleanTitle = (t) => t.replace(/^\s*\[실기기 확인 X\]\s*/, '');
+  const fmtDate = (iso) => new Intl.DateTimeFormat('ko-KR', { month: 'long', day: 'numeric', timeZone: 'Asia/Seoul' }).format(new Date(iso));
+  const fmtTime = (d) => new Intl.DateTimeFormat('ko-KR', { month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Seoul' }).format(d);
+
+  function showStatus(text, isError) {
+    const el = $('status');
+    el.textContent = text;
+    el.classList.toggle('error', !!isError);
+    el.hidden = !text;
+  }
+
+  function render() {
+    const area = $('area').value;
+    const rows = items.filter((i) => !area || i.area === area);
+    const n = items.length;
+    $('t-count').textContent = n;
+    $('t-authors').textContent = new Set(items.map((i) => i.author)).size;
+    $('t-commented').textContent = items.filter((i) => i.comments > 0).length;
+    $('lede').textContent = n === 0
+      ? '지금 실기기 확인을 기다리는 PR이 없습니다.'
+      : `실제 안드로이드 폰으로 확인을 기다리는 PR이 ${n}개 있습니다. 폰이 있다면 하나를 골라 확인해 주세요.`;
+
+    const tbody = $('rows');
+    tbody.replaceChildren();
+    if (!rows.length) {
+      const tr = document.createElement('tr');
+      const td = document.createElement('td');
+      td.colSpan = 6; td.className = 'meta';
+      td.textContent = n ? '이 분야에는 확인을 기다리는 PR이 없습니다.' : '확인을 기다리는 PR이 없습니다.';
+      tr.appendChild(td); tbody.appendChild(tr);
+      return;
+    }
+    for (const i of rows) {
+      const tr = document.createElement('tr');
+      const link = (text) => { const a = document.createElement('a'); a.href = i.url; a.target = '_blank'; a.rel = 'noopener'; a.textContent = text; return a; };
+      const td = (cls, child) => { const c = document.createElement('td'); if (cls) c.className = cls; if (typeof child === 'string') c.textContent = child; else c.appendChild(child); return c; };
+      const who = document.createElement('span');
+      who.textContent = i.author;
+      if (i.author === ME) who.className = 'mine';
+      const chip = document.createElement('span'); chip.className = 'chip'; chip.textContent = i.area;
+      tr.append(
+        td('pr', link('#' + i.number)),
+        td('title', link(i.title)),
+        td('who', who),
+        td('', chip),
+        td('date', fmtDate(i.created)),
+        td('num', String(i.comments)),
+      );
+      tbody.appendChild(tr);
+    }
+  }
+
+  function fillAreas() {
+    const sel = $('area');
+    const keep = sel.value;
+    const areas = [...new Set(items.map((i) => i.area))].sort((a, b) => a.localeCompare(b, 'ko'));
+    sel.replaceChildren(new Option('전체', ''), ...areas.map((a) => new Option(a, a)));
+    sel.value = areas.includes(keep) ? keep : '';
+  }
+
+  async function load() {
+    const btn = $('refresh');
+    btn.disabled = true; btn.textContent = '불러오는 중…';
+    try {
+      const res = await fetch(API, { headers: { Accept: 'application/vnd.github+json' } });
+      if (res.status === 403 || res.status === 429) {
+        const reset = Number(res.headers.get('x-ratelimit-reset'));
+        const when = reset ? fmtTime(new Date(reset * 1000)) : '잠시 뒤';
+        throw new Error(`GitHub 갱신 횟수(한 시간에 60번)를 다 썼습니다. ${when}에 다시 눌러 주세요.`);
+      }
+      if (!res.ok) throw new Error(`GitHub에서 목록을 받지 못했습니다 (${res.status}). 잠시 뒤 다시 눌러 주세요.`);
+      const data = await res.json();
+      items = (data.items || []).map((it) => ({
+        number: it.number,
+        title: cleanTitle(it.title),
+        author: it.user && it.user.login || '',
+        created: it.created_at,
+        comments: it.comments || 0,
+        url: it.html_url,
+        area: areaOf(it.title),
+      })).sort((a, b) => b.number - a.number);
+      fillAreas();
+      render();
+      showStatus(data.incomplete_results ? 'GitHub가 결과 일부만 보냈습니다. 잠시 뒤 다시 갱신해 주세요.' : '', false);
+      $('fetched').textContent = `${fmtTime(new Date())} 기준`;
+    } catch (e) {
+      showStatus(e.message || 'GitHub에 연결하지 못했습니다. 인터넷 연결을 확인하고 다시 눌러 주세요.', true);
+      if (!items.length) $('rows').innerHTML = '<tr><td colspan="6" class="meta">목록을 불러오지 못했습니다.</td></tr>';
+    } finally {
+      btn.disabled = false; btn.textContent = '갱신';
+    }
+  }
+
+  $('refresh').addEventListener('click', load);
+  $('area').addEventListener('change', render);
+  load();
+})();
+</script>
+</body>
+</html>
